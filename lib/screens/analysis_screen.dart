@@ -153,8 +153,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 itemCount: _activityStats.length,
                 itemBuilder: (context, index) {
                   final entry = _activityStats.entries.toList()[index];
-                  final percentage =
-                      (_totalActivities > 0 ? entry.value / _totalActivities : 0);
+                  final percentage = _totalActivities > 0 
+                      ? (entry.value / _totalActivities).toDouble()
+                      : 0.0;
                   final color = AppTheme.activityColor(entry.key);
 
                   return Padding(
