@@ -1,281 +1,243 @@
 import 'package:flutter/material.dart';
 import '../services/storage_service.dart';
 import '../services/theme.dart';
-import '../l10n/app_strings.dart';
 
 class SettingsScreen extends StatefulWidget {
-  final bool isPersian;
-  final ValueChanged<bool> onLanguageChanged;
+  final VoidCallback onLanguageChanged;
 
-  const SettingsScreen({
-    super.key,
-    required this.isPersian,
-    required this.onLanguageChanged,
-  });
+  const SettingsScreen({Key? key, required this.onLanguageChanged})
+      : super(key: key);
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late TextEditingController _shortGoalCtrl;
-  late TextEditingController _longGoalCtrl;
-  bool _loading = true;
-
-  AppStrings get s => widget.isPersian ? AppStrings.fa : AppStrings.en;
+  late TextEditingController _shortGoalController;
+  late TextEditingController _longGoalController;
+  bool _isFarsi = true;
 
   @override
   void initState() {
     super.initState();
-    _shortGoalCtrl = TextEditingController();
-    _longGoalCtrl = TextEditingController();
-    _load();
+    _shortGoalController = TextEditingController();
+    _longGoalController = TextEditingController();
+    _loadSettings();
   }
 
-  Future<void> _load() async {
-    final short = await StorageService.loadShortGoal();
-    final long = await StorageService.loadLongGoal();
+  void _loadSettings() async {
+    final shortGoal = await StorageService.loadShortGoal();
+    final longGoal = await StorageService.loadLongGoal();
+    final lang = await StorageService.loadLanguage();
+
     setState(() {
-      _shortGoalCtrl.text = short;
-      _longGoalCtrl.text = long;
-      _loading = false;
+      _shortGoalController.text = shortGoal;
+      _longGoalController.text = longGoal;
+      _isFarsi = lang;
     });
   }
 
-  Future<void> _saveGoals() async {
+  void _saveGoals() async {
     await StorageService.saveGoals(
-        _shortGoalCtrl.text, _longGoalCtrl.text);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.isPersian ? 'ذخیره شد' : 'Saved'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
+      _shortGoalController.text,
+      _longGoalController.text,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Goals saved')),
+    );
+  }
+
+  void _toggleLanguage(bool value) async {
+    setState(() {
+      _isFarsi = value;
+    });
+    await StorageService.saveLanguage(value);
+    widget.onLanguageChanged();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: widget.isPersian ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: AppTheme.background,
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                padding: const EdgeInsets.all(16),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Settings'),
+        backgroundColor: AppTheme.surface,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Language Setting
+            Text(
+              'Language',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: AppTheme.primary.withOpacity(0.2),
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildSection(
-                    s.language,
-                    Icons.language,
-                    [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _langBtn(
-                              s.persian,
-                              widget.isPersian,
-                              () {
-                                widget.onLanguageChanged(true);
-                                StorageService.saveLanguage(true);
-                              },
-                            ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Farsi',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: AppTheme.textPrimary,
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _langBtn(
-                              s.english,
-                              !widget.isPersian,
-                              () {
-                                widget.onLanguageChanged(false);
-                                StorageService.saveLanguage(false);
-                              },
-                            ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Use Farsi language',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
                           ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  _buildSection(
-                    s.myGoals,
-                    Icons.flag_outlined,
-                    [
-                      Text(s.shortTermGoal,
-                          style: const TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.textSecondary)),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _shortGoalCtrl,
-                        decoration: InputDecoration(
-                          hintText: s.goalPlaceholderShort,
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.all(12),
-                        ),
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(s.longTermGoal,
-                          style: const TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.textSecondary)),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _longGoalCtrl,
-                        decoration: InputDecoration(
-                          hintText: s.goalPlaceholderLong,
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.all(12),
-                        ),
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _saveGoals,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
-                            foregroundColor: Colors.white,
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
-                          ),
-                          child: Text(s.save),
-                        ),
-                      ),
-                    ],
+                  Switch(
+                    value: _isFarsi,
+                    onChanged: _toggleLanguage,
+                    activeColor: AppTheme.primary,
                   ),
-                  const SizedBox(height: 16),
-                  _buildGoalsDisplay(),
                 ],
               ),
-      ),
-    );
-  }
-
-  Widget _buildGoalsDisplay() {
-    final short = _shortGoalCtrl.text;
-    final long = _longGoalCtrl.text;
-    if (short.isEmpty && long.isEmpty) return const SizedBox();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppTheme.secondary.withOpacity(0.1),
-            AppTheme.primary.withOpacity(0.1),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: AppTheme.primary.withOpacity(0.2), width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.visibility_outlined,
-                  size: 18, color: AppTheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                widget.isPersian ? 'اهداف من' : 'My Goals',
-                style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primary),
+            ),
+            const SizedBox(height: 32),
+            Text(
+              'English',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textPrimary,
               ),
-            ],
-          ),
-          if (short.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              widget.isPersian ? '🎯 کوتاه‌مدت' : '🎯 Short-term',
-              style: const TextStyle(
-                  fontSize: 12, color: AppTheme.textSecondary),
             ),
-            const SizedBox(height: 4),
-            Text(short,
-                style: const TextStyle(
-                    fontSize: 14, color: AppTheme.textPrimary)),
-          ],
-          if (long.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              widget.isPersian ? '🚀 بلندمدت' : '🚀 Long-term',
-              style: const TextStyle(
-                  fontSize: 12, color: AppTheme.textSecondary),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              value: !_isFarsi,
+              onChanged: (value) => _toggleLanguage(!value),
+              title: const Text('Use English language'),
+              activeColor: AppTheme.primary,
             ),
-            const SizedBox(height: 4),
-            Text(long,
-                style: const TextStyle(
-                    fontSize: 14, color: AppTheme.textPrimary)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSection(
-      String title, IconData icon, List<Widget> children) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: AppTheme.primary),
-              const SizedBox(width: 8),
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 15,
+            const SizedBox(height: 32),
+            // Goals
+            Text(
+              'Goals',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _shortGoalController,
+              decoration: InputDecoration(
+                labelText: 'Short-term Goal',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: AppTheme.surfaceVariant,
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _longGoalController,
+              decoration: InputDecoration(
+                labelText: 'Long-term Goal',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                filled: true,
+                fillColor: AppTheme.surfaceVariant,
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saveGoals,
+                child: const Text('Save Goals'),
+              ),
+            ),
+            const SizedBox(height: 32),
+            // About
+            Text(
+              'About',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Life Planner',
+                    style: TextStyle(
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...children,
-        ],
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Version 1.0.0',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'A comprehensive app for scheduling, tracking challenges, and maintaining focus.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.textSecondary,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _langBtn(String label, bool selected, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? AppTheme.primary : const Color(0xFFE0E0E0),
-          ),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: selected ? Colors.white : AppTheme.textSecondary,
-          ),
-        ),
-      ),
-    );
+  @override
+  void dispose() {
+    _shortGoalController.dispose();
+    _longGoalController.dispose();
+    super.dispose();
   }
 }

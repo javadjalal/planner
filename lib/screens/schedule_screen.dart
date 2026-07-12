@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
-import '../models/models.dart';
 import '../services/storage_service.dart';
 import '../services/notification_service.dart';
 import '../services/theme.dart';
-import '../l10n/app_strings.dart';
+import '../models/activity.dart';
 import '../widgets/activity_tile.dart';
-import 'activity_editor.dart';
-import 'package:uuid/uuid.dart';
 
 class ScheduleScreen extends StatefulWidget {
-  final bool isPersian;
-  const ScheduleScreen({super.key, required this.isPersian});
+  const ScheduleScreen({Key? key}) : super(key: key);
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
@@ -19,304 +15,219 @@ class ScheduleScreen extends StatefulWidget {
 class _ScheduleScreenState extends State<ScheduleScreen> {
   List<Activity> _weekdayActivities = [];
   List<Activity> _weekendActivities = [];
-  Map<String, DailyRecord> _records = {};
-  int _dayOffset = 0;
-  bool _loading = true;
+  bool _isWeekday = true;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadActivities();
   }
 
-  Future<void> _load() async {
+  void _loadActivities() async {
     final wd = await StorageService.loadActivities(DayType.weekday);
     final we = await StorageService.loadActivities(DayType.weekend);
-    final rec = await StorageService.loadRecords();
     setState(() {
       _weekdayActivities = wd;
       _weekendActivities = we;
-      _records = rec;
-      _loading = false;
     });
   }
 
-  String get _todayKey {
-    final d = DateTime.now().add(Duration(days: _dayOffset));
-    return '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
+  void _saveActivities() async {
+    await StorageService.saveActivities(_weekdayActivities, DayType.weekday);
+    await StorageService.saveActivities(_weekendActivities, DayType.weekend);
+    await NotificationService.scheduleActivityNotifications(_weekdayActivities);
   }
 
-  bool _isWeekend(int offset) {
-    final d = DateTime.now().add(Duration(days: offset));
-    // Friday=5, Thursday=4 in Dart weekday (1=Mon...7=Sun)
-    // Persian weekend: Thursday & Friday => weekday 4 & 5
-    return d.weekday == 4 || d.weekday == 5;
-  }
+  void _addActivity() {
+    final nameController = TextEditingController();
+    final timeController = TextEditingController();
+    String selectedCategory = 'study';
 
-  List<Activity> get _currentActivities =>
-      _isWeekend(_dayOffset) ? _weekendActivities : _weekdayActivities;
-
-  DailyRecord get _currentRecord =>
-      _records[_todayKey] ??
-      DailyRecord(date: _todayKey, completedActivities: {});
-
-  AppStrings get s => widget.isPersian ? AppStrings.fa : AppStrings.en;
-
-  String _dayLabel(int offset) {
-    if (offset == 0) return s.today;
-    if (offset == -1) return s.yesterday;
-    if (offset == 1) return s.tomorrow;
-    final d = DateTime.now().add(Duration(days: offset));
-    final names = s.dayNames;
-    // weekday: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 7=Sun
-    // Persian order: Sat=6,Sun=7,Mon=1,Tue=2,Wed=3,Thu=4,Fri=5
-    final idx = [6, 0, 1, 2, 3, 4, 5][d.weekday - 1];
-    return names[idx];
-  }
-
-  Future<void> _toggleActivity(String activityId) async {
-    final record = _currentRecord;
-    record.completedActivities[activityId] =
-        !(record.completedActivities[activityId] ?? false);
-    _records[_todayKey] = record;
-    await StorageService.saveRecords(_records);
-    setState(() {});
-  }
-
-  Future<void> _openEditor({Activity? activity, required DayType dayType}) async {
-    final result = await Navigator.push<Activity?>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ActivityEditorScreen(
-          activity: activity,
-          dayType: dayType,
-          isPersian: widget.isPersian,
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Activity'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Activity Name'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: timeController,
+              decoration: const InputDecoration(labelText: 'Time (HH:MM)'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButton<String>(
+              value: selectedCategory,
+              onChanged: (value) {
+                selectedCategory = value ?? 'study';
+              },
+              items: ['study', 'exercise', 'work', 'rest', 'meditation', 'reading']
+                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                  .toList(),
+            ),
+          ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (nameController.text.isNotEmpty) {
+                final activity = Activity(
+                  id: DateTime.now().millisecondsSinceEpoch.toString(),
+                  name: nameController.text,
+                  category: selectedCategory,
+                  startTime: timeController.text.isEmpty ? null : timeController.text,
+                );
+                setState(() {
+                  if (_isWeekday) {
+                    _weekdayActivities.add(activity);
+                  } else {
+                    _weekendActivities.add(activity);
+                  }
+                });
+                _saveActivities();
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
       ),
     );
-    if (result != null) {
-      setState(() {
-        if (dayType == DayType.weekday) {
-          final idx = _weekdayActivities.indexWhere((a) => a.id == result.id);
-          if (idx >= 0) {
-            _weekdayActivities[idx] = result;
-          } else {
-            _weekdayActivities.add(result);
-          }
-          _weekdayActivities.sort((a, b) =>
-              (a.startTime.hour * 60 + a.startTime.minute)
-                  .compareTo(b.startTime.hour * 60 + b.startTime.minute));
-          StorageService.saveActivities(_weekdayActivities, DayType.weekday);
-        } else {
-          final idx = _weekendActivities.indexWhere((a) => a.id == result.id);
-          if (idx >= 0) {
-            _weekendActivities[idx] = result;
-          } else {
-            _weekendActivities.add(result);
-          }
-          _weekendActivities.sort((a, b) =>
-              (a.startTime.hour * 60 + a.startTime.minute)
-                  .compareTo(b.startTime.hour * 60 + b.startTime.minute));
-          StorageService.saveActivities(_weekendActivities, DayType.weekend);
-        }
-      });
-      NotificationService.scheduleActivityNotifications(
-          _currentActivities, s.notificationTitle);
-    }
   }
 
-  Future<void> _deleteActivity(String id, DayType dayType) async {
+  void _toggleActivity(int index, bool value) {
     setState(() {
-      if (dayType == DayType.weekday) {
-        _weekdayActivities.removeWhere((a) => a.id == id);
-        StorageService.saveActivities(_weekdayActivities, DayType.weekday);
+      final activity = _isWeekday ? _weekdayActivities[index] : _weekendActivities[index];
+      final updated = activity.copyWith(completed: value);
+      if (_isWeekday) {
+        _weekdayActivities[index] = updated;
       } else {
-        _weekendActivities.removeWhere((a) => a.id == id);
-        StorageService.saveActivities(_weekendActivities, DayType.weekend);
+        _weekendActivities[index] = updated;
       }
     });
+    _saveActivities();
   }
 
-  double get _completionRate {
-    final activities = _currentActivities;
-    if (activities.isEmpty) return 0;
-    final done = activities
-        .where((a) => _currentRecord.completedActivities[a.id] == true)
-        .length;
-    return done / activities.length;
+  void _deleteActivity(int index) {
+    setState(() {
+      if (_isWeekday) {
+        _weekdayActivities.removeAt(index);
+      } else {
+        _weekendActivities.removeAt(index);
+      }
+    });
+    _saveActivities();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    final activities = _isWeekday ? _weekdayActivities : _weekendActivities;
 
-    final isRtl = widget.isPersian;
-
-    return Directionality(
-      textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: AppTheme.background,
-        body: Column(
-          children: [
-            _buildDaySelector(),
-            _buildProgressBar(),
-            _buildDayTypeIndicator(),
-            Expanded(child: _buildActivityList()),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _openEditor(
-            dayType: _isWeekend(_dayOffset) ? DayType.weekend : DayType.weekday,
-          ),
-          child: const Icon(Icons.add),
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Schedule'),
+        backgroundColor: AppTheme.surface,
       ),
-    );
-  }
-
-  Widget _buildDaySelector() {
-    return Container(
-      color: AppTheme.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: Column(
         children: [
-          IconButton(
-            onPressed: () => setState(() => _dayOffset--),
-            icon: const Icon(Icons.chevron_left),
-          ),
-          Column(
-            children: [
-              Text(
-                _dayLabel(_dayOffset),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
-                ),
+          Container(
+            color: AppTheme.surface,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _isWeekday = true),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _isWeekday ? AppTheme.primary : AppTheme.background,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Weekday',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _isWeekday ? Colors.white : AppTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _isWeekday = false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: !_isWeekday ? AppTheme.primary : AppTheme.background,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Weekend',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: !_isWeekday ? Colors.white : AppTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                _todayKey,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textSecondary,
-                ),
-              ),
-            ],
-          ),
-          IconButton(
-            onPressed: () => setState(() => _dayOffset++),
-            icon: const Icon(Icons.chevron_right),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProgressBar() {
-    final rate = _completionRate;
-    final done = _currentActivities
-        .where((a) => _currentRecord.completedActivities[a.id] == true)
-        .length;
-    final total = _currentActivities.length;
-
-    return Container(
-      color: AppTheme.surface,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$done ${s.of} $total ${s.completed}',
-            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
-          ),
-          const SizedBox(height: 4),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: rate,
-              minHeight: 6,
-              backgroundColor: const Color(0xFFE0E0E0),
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(AppTheme.secondary),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDayTypeIndicator() {
-    final isWeekend = _isWeekend(_dayOffset);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: isWeekend
-            ? const Color(0xFFE8F5E9)
-            : const Color(0xFFE3F2FD),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isWeekend ? Icons.weekend_outlined : Icons.work_outline,
-            size: 16,
-            color: isWeekend
-                ? const Color(0xFF2E7D32)
-                : const Color(0xFF1565C0),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            isWeekend
-                ? (widget.isPersian ? 'پنجشنبه / جمعه' : 'Weekend')
-                : (widget.isPersian ? 'روز کاری' : 'Weekday'),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: isWeekend
-                  ? const Color(0xFF2E7D32)
-                  : const Color(0xFF1565C0),
-            ),
+          Expanded(
+            child: activities.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.calendar_today,
+                            size: 64, color: AppTheme.textSecondary),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No activities yet',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: AppTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: activities.length,
+                    itemBuilder: (context, index) {
+                      final activity = activities[index];
+                      return ActivityTile(
+                        activity: activity,
+                        onTap: () {},
+                        onDelete: () => _deleteActivity(index),
+                        onCompleted: (value) =>
+                            _toggleActivity(index, value ?? false),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildActivityList() {
-    final activities = _currentActivities;
-    if (activities.isEmpty) {
-      return Center(
-        child: Text(s.noActivities,
-            style: const TextStyle(color: AppTheme.textSecondary)),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-      itemCount: activities.length,
-      itemBuilder: (_, i) {
-        final a = activities[i];
-        final isDone = _currentRecord.completedActivities[a.id] == true;
-        return ActivityTile(
-          activity: a,
-          isDone: isDone,
-          isPersian: widget.isPersian,
-          onTap: () => _toggleActivity(a.id),
-          onEdit: () => _openEditor(
-              activity: a,
-              dayType: _isWeekend(_dayOffset)
-                  ? DayType.weekend
-                  : DayType.weekday),
-          onDelete: () => _deleteActivity(
-              a.id,
-              _isWeekend(_dayOffset) ? DayType.weekend : DayType.weekday),
-        );
-      },
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addActivity,
+        child: const Icon(Icons.add),
+      ),
     );
   }
 }

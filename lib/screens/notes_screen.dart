@@ -1,202 +1,165 @@
 import 'package:flutter/material.dart';
-import '../models/models.dart';
 import '../services/storage_service.dart';
 import '../services/theme.dart';
-import '../l10n/app_strings.dart';
 
 class NotesScreen extends StatefulWidget {
-  final bool isPersian;
-  const NotesScreen({super.key, required this.isPersian});
+  const NotesScreen({Key? key}) : super(key: key);
 
   @override
   State<NotesScreen> createState() => _NotesScreenState();
 }
 
 class _NotesScreenState extends State<NotesScreen> {
-  Map<String, DailyRecord> _records = {};
-  late TextEditingController _ctrl;
-  String _todayKey = '';
-  bool _loading = true;
-
-  AppStrings get s => widget.isPersian ? AppStrings.fa : AppStrings.en;
+  List<Map<String, dynamic>> _records = [];
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController();
-    final now = DateTime.now();
-    _todayKey =
-        '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
-    _load();
+    _loadRecords();
   }
 
-  Future<void> _load() async {
+  void _loadRecords() async {
     final records = await StorageService.loadRecords();
     setState(() {
       _records = records;
-      _ctrl.text = records[_todayKey]?.note ?? '';
-      _loading = false;
     });
   }
 
-  Future<void> _save() async {
-    final record = _records[_todayKey] ??
-        DailyRecord(date: _todayKey, completedActivities: {});
-    record.note = _ctrl.text;
-    _records[_todayKey] = record;
-    await StorageService.saveRecords(_records);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.isPersian ? 'یادداشت ذخیره شد' : 'Note saved'),
-          duration: const Duration(seconds: 2),
+  void _addNote() {
+    final controller = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Note'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Write your thoughts here...',
+          ),
         ),
-      );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (controller.text.isNotEmpty) {
+                final note = {
+                  'id': DateTime.now().millisecondsSinceEpoch,
+                  'content': controller.text,
+                  'timestamp': DateTime.now().toIso8601String(),
+                  'type': 'note',
+                };
+                setState(() {
+                  _records.insert(0, note);
+                });
+                StorageService.saveRecords(_records);
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteNote(int index) {
+    setState(() {
+      _records.removeAt(index);
+    });
+    StorageService.saveRecords(_records);
+  }
+
+  String _formatTime(String isoTime) {
+    try {
+      final dateTime = DateTime.parse(isoTime);
+      final now = DateTime.now();
+      final diff = now.difference(dateTime);
+
+      if (diff.inMinutes < 1) return 'now';
+      if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+      if (diff.inDays < 1) return '${diff.inHours}h ago';
+      return '${diff.inDays}d ago';
+    } catch (e) {
+      return '';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: widget.isPersian ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: AppTheme.background,
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      s.dailyNote,
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textPrimary),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _todayKey,
-                      style: const TextStyle(
-                          fontSize: 13, color: AppTheme.textSecondary),
-                    ),
-                    const SizedBox(height: 16),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: const Color(0xFFE0E0E0), width: 0.5),
-                        ),
-                        child: TextField(
-                          controller: _ctrl,
-                          maxLines: null,
-                          expands: true,
-                          textAlign: widget.isPersian
-                              ? TextAlign.right
-                              : TextAlign.left,
-                          decoration: InputDecoration(
-                            hintText: s.writeNote,
-                            border: InputBorder.none,
-                            hintStyle: const TextStyle(
-                                color: AppTheme.textSecondary),
-                          ),
-                          style: const TextStyle(
-                              fontSize: 15,
-                              color: AppTheme.textPrimary,
-                              height: 1.6),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _save,
-                        icon: const Icon(Icons.save_outlined),
-                        label: Text(s.save),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primary,
-                          foregroundColor: Colors.white,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (_records.isNotEmpty) _buildPastNotes(),
-                  ],
-                ),
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notes'),
+        backgroundColor: AppTheme.surface,
       ),
-    );
-  }
-
-  Widget _buildPastNotes() {
-    final past = _records.entries
-        .where((e) => e.key != _todayKey && e.value.note.isNotEmpty)
-        .toList()
-      ..sort((a, b) => b.key.compareTo(a.key));
-
-    if (past.isEmpty) return const SizedBox();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          widget.isPersian ? 'یادداشت‌های قبلی' : 'Past Notes',
-          style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 120,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: past.take(5).length,
-            itemBuilder: (_, i) {
-              final entry = past[i];
-              return Container(
-                width: 180,
-                margin: const EdgeInsets.only(left: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: const Color(0xFFE0E0E0), width: 0.5),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.key,
-                      style: const TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textSecondary),
+      body: _records.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.note, size: 64, color: AppTheme.textSecondary),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No notes yet',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: AppTheme.textSecondary,
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      entry.value.note,
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 12, color: AppTheme.textPrimary),
+                  ),
+                ],
+              ),
+            )
+          : ListView.builder(
+              itemCount: _records.length,
+              padding: const EdgeInsets.all(16),
+              itemBuilder: (context, index) {
+                final record = _records[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Dismissible(
+                    key: Key(record['id'].toString()),
+                    onDismissed: (_) => _deleteNote(index),
+                    background: Container(
+                      color: AppTheme.error,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 16),
+                      child: const Icon(Icons.delete, color: Colors.white),
                     ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            record['content'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _formatTime(record['timestamp'] ?? ''),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addNote,
+        child: const Icon(Icons.add),
+      ),
     );
   }
 }

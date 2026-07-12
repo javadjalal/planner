@@ -1,12 +1,10 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import '../services/theme.dart';
+import 'dart:async';
 import '../services/notification_service.dart';
-import '../l10n/app_strings.dart';
+import '../services/theme.dart';
 
 class FocusScreen extends StatefulWidget {
-  final bool isPersian;
-  const FocusScreen({super.key, required this.isPersian});
+  const FocusScreen({Key? key}) : super(key: key);
 
   @override
   State<FocusScreen> createState() => _FocusScreenState();
@@ -14,65 +12,10 @@ class FocusScreen extends StatefulWidget {
 
 class _FocusScreenState extends State<FocusScreen> {
   Timer? _timer;
-  int _secondsLeft = 25 * 60;
+  int _totalSeconds = 25 * 60;
+  int _remainingSeconds = 25 * 60;
   bool _isRunning = false;
   bool _isBreak = false;
-  int _sessions = 0;
-  int _workMinutes = 25;
-  int _breakMinutes = 5;
-
-  AppStrings get s => widget.isPersian ? AppStrings.fa : AppStrings.en;
-
-  void _start() {
-    setState(() => _isRunning = true);
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_secondsLeft > 0) {
-        setState(() => _secondsLeft--);
-      } else {
-        _timer?.cancel();
-        setState(() {
-          _isRunning = false;
-          if (!_isBreak) {
-            _sessions++;
-            _isBreak = true;
-            _secondsLeft = _breakMinutes * 60;
-            NotificationService.showInstant(
-                s.notificationTitle, s.pomodoroBreak);
-          } else {
-            _isBreak = false;
-            _secondsLeft = _workMinutes * 60;
-            NotificationService.showInstant(
-                s.notificationTitle, s.pomodoroWork);
-          }
-        });
-      }
-    });
-  }
-
-  void _pause() {
-    _timer?.cancel();
-    setState(() => _isRunning = false);
-  }
-
-  void _reset() {
-    _timer?.cancel();
-    setState(() {
-      _isRunning = false;
-      _isBreak = false;
-      _secondsLeft = _workMinutes * 60;
-    });
-  }
-
-  String get _timeDisplay {
-    final m = (_secondsLeft ~/ 60).toString().padLeft(2, '0');
-    final s = (_secondsLeft % 60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
-  double get _progress {
-    final total = (_isBreak ? _breakMinutes : _workMinutes) * 60;
-    return 1 - (_secondsLeft / total);
-  }
 
   @override
   void dispose() {
@@ -80,162 +23,196 @@ class _FocusScreenState extends State<FocusScreen> {
     super.dispose();
   }
 
+  void _startTimer() {
+    if (_isRunning) return;
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        if (_remainingSeconds > 0) {
+          _remainingSeconds--;
+        } else {
+          _timer?.cancel();
+          _isRunning = false;
+          _toggleBreak();
+          NotificationService.showInstant(
+            'Time\'s up!',
+            _isBreak ? 'Break time over' : 'Time to take a break',
+          );
+        }
+      });
+    });
+
+    setState(() {
+      _isRunning = true;
+    });
+  }
+
+  void _pauseTimer() {
+    _timer?.cancel();
+    setState(() {
+      _isRunning = false;
+    });
+  }
+
+  void _resetTimer() {
+    _timer?.cancel();
+    setState(() {
+      _isRunning = false;
+      _remainingSeconds = _totalSeconds;
+    });
+  }
+
+  void _toggleBreak() {
+    setState(() {
+      _isBreak = !_isBreak;
+      _totalSeconds = _isBreak ? 5 * 60 : 25 * 60;
+      _remainingSeconds = _totalSeconds;
+    });
+  }
+
+  String _formatTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final color = _isBreak ? AppTheme.secondary : AppTheme.primary;
+    final progress = _remainingSeconds / _totalSeconds;
 
-    return Directionality(
-      textDirection: widget.isPersian ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: AppTheme.background,
-        body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              Text(
-                _isBreak ? s.pomodoroBreak : s.pomodoroWork,
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                    color: color),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_isBreak ? 'Break Time' : 'Focus Session'),
+        backgroundColor: AppTheme.surface,
+      ),
+      body: Container(
+        color: AppTheme.background,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Timer display
+            Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color.withOpacity(0.1),
               ),
-              const SizedBox(height: 40),
-              SizedBox(
-                width: 220,
-                height: 220,
-                child: Stack(
-                  alignment: Alignment.center,
+              child: Center(
+                child: Text(
+                  _formatTime(_remainingSeconds),
+                  style: TextStyle(
+                    fontSize: 56,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            // Progress indicator
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 10,
+                  backgroundColor: color.withOpacity(0.2),
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            // Control buttons
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isRunning ? _pauseTimer : _startTimer,
+                  icon: Icon(_isRunning ? Icons.pause : Icons.play_arrow),
+                  label: Text(_isRunning ? 'Pause' : 'Start'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: color,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton.icon(
+                  onPressed: _resetTimer,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reset'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            // Break toggle
+            GestureDetector(
+              onTap: _toggleBreak,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceVariant,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 220,
-                      height: 220,
-                      child: CircularProgressIndicator(
-                        value: _progress,
-                        strokeWidth: 10,
-                        backgroundColor: const Color(0xFFEEEEEE),
-                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                    Text(
+                      _isBreak ? 'Take a break' : 'Start focus session',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          _timeDisplay,
-                          style: TextStyle(
-                              fontSize: 52,
-                              fontWeight: FontWeight.w300,
-                              color: color,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures()
-                              ]),
-                        ),
-                        Text(
-                          '$_sessions ${s.sessions}',
-                          style: const TextStyle(
-                              fontSize: 14,
-                              color: AppTheme.textSecondary),
-                        ),
-                      ],
+                    const SizedBox(width: 8),
+                    Icon(
+                      _isBreak ? Icons.coffee : Icons.lightbulb,
+                      color: AppTheme.textSecondary,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 40),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (!_isRunning)
-                    _actionBtn(s.start, Icons.play_arrow_rounded, color,
-                        _start)
-                  else
-                    _actionBtn(s.pause, Icons.pause_rounded, color, _pause),
-                  const SizedBox(width: 16),
-                  _actionBtn(s.reset, Icons.refresh_rounded,
-                      AppTheme.textSecondary, _reset),
-                ],
+            ),
+            const SizedBox(height: 48),
+            // Tips
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceVariant,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Focus Tips:',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '• Silence your phone\n• Close unnecessary tabs\n• Stay hydrated',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 40),
-              _buildSettings(),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-    );
-  }
-
-  Widget _actionBtn(
-      String label, IconData icon, Color color, VoidCallback onTap) {
-    return ElevatedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 20),
-      label: Text(label),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        padding:
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Widget _buildSettings() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
-      ),
-      child: Column(
-        children: [
-          _sliderRow(s.workTime, _workMinutes, 10, 60, (v) {
-            setState(() {
-              _workMinutes = v.round();
-              if (!_isRunning && !_isBreak) {
-                _secondsLeft = _workMinutes * 60;
-              }
-            });
-          }),
-          _sliderRow(s.breakTime, _breakMinutes, 1, 30, (v) {
-            setState(() {
-              _breakMinutes = v.round();
-              if (!_isRunning && _isBreak) {
-                _secondsLeft = _breakMinutes * 60;
-              }
-            });
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _sliderRow(
-      String label, int value, int min, int max, ValueChanged<double> onChanged) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 80,
-          child: Text(label,
-              style: const TextStyle(
-                  fontSize: 13, color: AppTheme.textSecondary)),
-        ),
-        Expanded(
-          child: Slider(
-            value: value.toDouble(),
-            min: min.toDouble(),
-            max: max.toDouble(),
-            divisions: max - min,
-            onChanged: onChanged,
-            activeColor: AppTheme.primary,
-          ),
-        ),
-        Text('$value ${s.minutes}',
-            style: const TextStyle(
-                fontSize: 13, color: AppTheme.textPrimary)),
-      ],
     );
   }
 }
