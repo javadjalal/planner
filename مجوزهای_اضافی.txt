@@ -1,0 +1,35 @@
+این خط‌ها رو به فایل تازه‌ساز android/app/src/main/AndroidManifest.xml اضافه کن.
+
+===========================================
+۱) این ۵ خط رو داخل تگ <manifest> بذار (قبل از <application):
+===========================================
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+
+===========================================
+۲) این دو تا <receiver> رو داخل تگ <application> بذار (قبل از </application>):
+===========================================
+
+        <receiver android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
+        <receiver android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
+
+===========================================
+۳) اختیاری: می‌تونی android:label رو هم تغییر بدی به:
+===========================================
+
+android:label="برنامه‌ریز من"
