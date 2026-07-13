@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/storage_service.dart';
-import '../services/notification_service.dart';
 import '../services/theme.dart';
 import '../models/activity.dart';
 import '../widgets/activity_tile.dart';
@@ -35,7 +34,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   void _saveActivities() async {
     await StorageService.saveActivities(_weekdayActivities, DayType.weekday);
     await StorageService.saveActivities(_weekendActivities, DayType.weekend);
-    await NotificationService.scheduleActivityNotifications(_weekdayActivities);
+    // Notification scheduling - can be re-enabled later
+    // await NotificationService.scheduleActivityNotifications(_weekdayActivities);
   }
 
   void _addActivity() {

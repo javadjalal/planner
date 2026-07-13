@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../services/notification_service.dart';
 import '../services/theme.dart';
 
 class FocusScreen extends StatefulWidget {
@@ -34,10 +33,8 @@ class _FocusScreenState extends State<FocusScreen> {
           _timer?.cancel();
           _isRunning = false;
           _toggleBreak();
-          NotificationService.showInstant(
-            'Time\'s up!',
-            _isBreak ? 'Break time over' : 'Time to take a break',
-          );
+          // Notification feature - can be re-enabled later
+          // NotificationService.showInstant('Time\'s up!', _isBreak ? 'Break time over' : 'Time to take a break');
         }
       });
     });
